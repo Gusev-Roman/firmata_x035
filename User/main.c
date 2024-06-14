@@ -23,15 +23,14 @@
 #include <stdlib.h>	// malloc/free
 #include "firmata_def.h"
 #include <assert.h>
+#include "FIFO.h"
 
 /* Global define */
 
 /* Global Variable */
 // возможно имеет смысл в структуре FIFO-ring
-static u8 _snd_buf[128];
+fifo_t _send_buf;
 static u8 _rcv_buf[128];
-u8 *_snd_first = _snd_buf;
-u8 *_snd_last = _snd_buf;
 u8 *_rcv_first = _rcv_buf;
 u8 *_rcv_last = _rcv_buf;
 // запись в буфер увеличивает last до тех пор, пока не будет достигнут правый край; last перепрыгнет на начало
@@ -210,6 +209,7 @@ int main(void)
     static u8 RxCnt1 = 0;
 #define TxSize1 100
     u8 RxBuffer1[TxSize1] = {0};               /* USART2 Read buffer on stack */
+    _send_buf = fifo_create(1024, sizeof(char));
 
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();
@@ -225,8 +225,8 @@ int main(void)
 
     while(1)
     {
-    	process_tx_queue(); // send next char if out buffer empty
-    	process_rx_queue(); // get next char if rcv buff ready
+    	//process_tx_queue(); // send next char if out buffer empty
+    	//process_rx_queue(); // get next char if rcv buff ready
         while(USART_GetFlagStatus(USART2, USART_FLAG_RXNE) == RESET)
         {
         	// wait for input char
