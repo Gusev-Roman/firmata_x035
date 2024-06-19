@@ -204,7 +204,8 @@ void call_sysex(u8 *buf, u8 *sz){
  */
 int main(void)
 {
-    //u8 i = 0;
+    u8 u_char, s_char;
+    bool wait_sysex = false;
     static u8 RxCnt1 = 0;
 #define TxSize1 100
     u8 RxBuffer1[TxSize1] = {0};               /* USART2 Read buffer on stack */
@@ -226,21 +227,31 @@ int main(void)
     {
     	//process_tx_queue(); // send next char if out buffer empty
     	//process_rx_queue(); // get next char if rcv buff ready
-        while(USART_GetFlagStatus(USART2, USART_FLAG_RXNE) == RESET)
+        if(USART_GetFlagStatus(USART2, USART_FLAG_RXNE) != RESET)
         {
-        	// wait for input char
+        	u_char = USART_ReceiveData(USART2);
+        	fifo_add(_rcv_buf, &u_char);
         }
-        RxBuffer1[RxCnt1++] = USART_ReceiveData(USART2);
+        if(!fifo_is_empty(_send_buf)){
+        	if(USART_GetFlagStatus(USART2, USART_FLAG_TXE) != RESET){
+        		fifo_get(_send_buf, &s_char);
+        		USART_SendData(USART2, s_char);
+        	}
+        }
+        if(wait_sysex){
+        	switch(u_char){
+        	case REPORT_FIRMWARE:
+        		break;
+        	}
+        	wait_sysex = false;
+        }
         // echo our char as hex
-        if(RxBuffer1[RxCnt1-1] == 0xF0){
-        	call_sysex(RxBuffer1, &RxCnt1);
-        	RxCnt1 = 0;
+        if(u_char == START_SYSEX){
+        	wait_sysex = true;
         }
-        //else uart_echo(RxBuffer1, RxCnt1);
+        // maybe use USART3 as debug device?
 
         // ��ڧާӧ�� ����ӧ֧��֧��� �ߧ� F0 (start sysex) �ڧݧ� F9 (get_ver) �ڧݧ� D7 (report dig port)
         // ����ݧ� SYSEX ���ڧ��էڧ� 79
-        //Delay_Ms(1000);
-        //printf("-DEBUG-PR-%08x\r\n", i++);
     }
 }
