@@ -205,7 +205,8 @@ void call_sysex(u8 *buf, u8 *sz){
 int main(void)
 {
     u8 u_char, s_char;
-    bool wait_sysex = false;
+    u8 _sysex_ok = 0;
+    u8 _wait_sysex_end = 0;
     static u8 RxCnt1 = 0;
 #define TxSize1 100
     u8 RxBuffer1[TxSize1] = {0};               /* USART2 Read buffer on stack */
@@ -223,6 +224,8 @@ int main(void)
 
     GPIO_Toggle_INIT();
 
+    // main loop: getting UART chars, scan it for END_SYSEX, set flag for reqiest received
+    // old style commands: must count bytes :(
     while(1)
     {
     	//process_tx_queue(); // send next char if out buffer empty
@@ -231,6 +234,15 @@ int main(void)
         {
         	u_char = USART_ReceiveData(USART2);
         	fifo_add(_rcv_buf, &u_char);
+        	// check byte for specials...
+        	switch(u_char){
+        	case START_SYSEX:
+        		_wait_sysex_end = 1;
+        		break;
+        	case END_SYSEX:
+        		_wait_sysex_end = 0;
+        		_sysex_ok = 1;
+        	}
         }
         if(!fifo_is_empty(_send_buf)){
         	if(USART_GetFlagStatus(USART2, USART_FLAG_TXE) != RESET){
@@ -238,20 +250,29 @@ int main(void)
         		USART_SendData(USART2, s_char);
         	}
         }
-        if(wait_sysex){
+        if(_sysex_ok){	// start_sysex & end_sysex RCVD
+        	_sysex_ok = 0;
+        	_fifo_get(_rcv_buf, &u_char);	// start
+        	_fifo_get(_rcv_buf, &u_char);	// cmd
         	switch(u_char){
         	case REPORT_FIRMWARE:
+        		make_sysex_resp(buf, firmware_str, &buf_len);
+        		USART_print(buf, buf_len);
+        		break;
+        	case CAPABILITY_QUERY:
+        		break;
+        	case ANALOG_MAPPING_QUERY:
         		break;
         	}
-        	wait_sysex = false;
         }
         // echo our char as hex
         if(u_char == START_SYSEX){
-        	wait_sysex = true;
         }
         // maybe use USART3 as debug device?
 
-        // ��ڧާӧ�� ����ӧ֧��֧��� �ߧ� F0 (start sysex) �ڧݧ� F9 (get_ver) �ڧݧ� D7 (report dig port)
-        // ����ݧ� SYSEX ���ڧ��էڧ� 79
+        // Valid start bytes are F0 (start sysex), F9 (get_ver) and D7 (report dig port)
+        // F4: set pin mode
+        // F5: set pin value
+        // FF: reset
     }
 }
