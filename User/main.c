@@ -224,6 +224,8 @@ int main(void)
 
     GPIO_Toggle_INIT();
 
+    send_version();
+    send_firmware_id();
     // main loop: getting UART chars, scan it for END_SYSEX, set flag for reqiest received
     // old style commands: must count bytes :(
     while(1)
@@ -274,5 +276,6 @@ int main(void)
         // F4: set pin mode
         // F5: set pin value
         // FF: reset
+        // firmata for Arduino sends F9 and then F0:79 on reset
     }
 }
