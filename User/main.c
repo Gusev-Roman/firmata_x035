@@ -31,7 +31,10 @@
 // указатель на FIFO-ring 1 кб для исходящих данных
 fifo_t _send_buf;
 // для входящих данных тоже можно приделать буфер, но вытаскивать все равно будем по готовности и побайтово
-fifo_t _rcv_buf;
+fifo_t _recv_buf;
+const uint8_t ver_major = 2;
+const uint8_t ver_minor = 5;
+
 // запись в буфер увеличивает last до тех пор, пока не будет достигнут правый край; last перепрыгнет на начало
 // запись в регистр увеличит first, пока не достигнет last
 
@@ -52,6 +55,43 @@ void GPIO_Toggle_INIT(void)
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 }
+/**
+ * write byte to FIFO
+ * @param data - byte to write. No overflow test
+ */
+void fs_write(uint8_t *data){
+	fifo_add(_send_buf, data);	// give pointer to data but not itself
+}
+// FirmataMarshaller::sendVersion
+void m_sendVersion(uint8_t major, uint8_t minor)
+//const
+{
+  //if ( (Stream *)NULL == FirmataStream ) { return; }
+  fs_write(&REPORT_VERSION);
+  fs_write(&major);
+  fs_write(&minor);
+}
+
+// FirmataClass::printFirmwareVersion(void)
+fc_printFirmwareVersion(void){
+	const char *fw_sign = "StandardFirmata.RV.x035";
+	uint8_t tbuf[46+3]; // 1+2+46+1
+
+	fs_write(&START_SYSEX);
+    fs_write(&ver_major);
+	fs_write(&ver_minor);
+	// send fw_sign as unicode
+	fs_write(&END_SYSEX);
+
+}
+// FirmataClass::printVersion(void)
+void fc_printVersion(void)
+{
+  m_sendVersion(FIRMATA_PROTOCOL_MAJOR_VERSION, FIRMATA_PROTOCOL_MINOR_VERSION);
+}
+////////////////////////////////////////////////////////////////////////////////
+
+
 
 void uart_echo(u8 *buf, u8 sz){
 	u8 tmpb[4];
@@ -125,6 +165,7 @@ const u32 _pin_num_[] = {
 
 /*
  * wait for output buffer empty and send next byte
+ * ATTENTION! No FIFO!
  */
 void uart_send(u8 *buf, u8 len){
 	for(int i=0; i<len; i++){
@@ -211,6 +252,7 @@ int main(void)
 #define TxSize1 100
     u8 RxBuffer1[TxSize1] = {0};               /* USART2 Read buffer on stack */
     _send_buf = fifo_create(1024, sizeof(char));
+    _recv_buf = fifo_create(1024, sizeof(char));
 
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();
@@ -219,13 +261,16 @@ int main(void)
 #if (SDI_PRINT == SDI_PR_OPEN)
     SDI_Printf_Enable();
 #else
+    /*
+     * функцией printf пользоваться не будем, т.к. она не использует FIFO (либо переписать _write)
+     */
     USART_Printf_Init(57600); // firmata speed
 #endif
 
     GPIO_Toggle_INIT();
 
-    send_version();
-    send_firmware_id();
+    fc_printVersion();
+    fc_printFirmwareVersion();
     // main loop: getting UART chars, scan it for END_SYSEX, set flag for reqiest received
     // old style commands: must count bytes :(
     while(1)
@@ -235,7 +280,7 @@ int main(void)
         if(USART_GetFlagStatus(USART2, USART_FLAG_RXNE) != RESET)
         {
         	u_char = USART_ReceiveData(USART2);
-        	fifo_add(_rcv_buf, &u_char);
+        	fifo_add(_recv_buf, &u_char);
         	// check byte for specials...
         	switch(u_char){
         	case START_SYSEX:
@@ -254,12 +299,13 @@ int main(void)
         }
         if(_sysex_ok){	// start_sysex & end_sysex RCVD
         	_sysex_ok = 0;
-        	_fifo_get(_rcv_buf, &u_char);	// start
-        	_fifo_get(_rcv_buf, &u_char);	// cmd
+        	_fifo_get(_recv_buf, &u_char);	// start
+        	_fifo_get(_recv_buf, &u_char);	// cmd
         	switch(u_char){
         	case REPORT_FIRMWARE:
-        		make_sysex_resp(buf, firmware_str, &buf_len);
-        		USART_print(buf, buf_len);
+        		//make_sysex_resp(buf, firmware_str, &buf_len);
+        		// TODO: подготовить буфер и передать его в FIFO (реализовано в fc_printFirmwareVersion)
+        		//USART_print(buf, buf_len);
         		break;
         	case CAPABILITY_QUERY:
         		break;
@@ -272,7 +318,7 @@ int main(void)
         }
         // maybe use USART3 as debug device?
 
-        // Valid start bytes are F0 (start sysex), F9 (get_ver) and D7 (report dig port)
+        // Valid start bytes are F0 (start sysex) and D7 (report dig port)
         // F4: set pin mode
         // F5: set pin value
         // FF: reset

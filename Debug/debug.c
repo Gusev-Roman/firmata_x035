@@ -163,6 +163,8 @@ void SDI_Printf_Enable(void)
  * @fn      _write
  *
  * @brief   Support Printf Function
+ * 			функция с задержкой: пока все size байт не будет передано,
+ * 			управление не будет передаваться другому коду (за исключением прерываний)
  *
  * @param   *buf - UART send Data.
  *          size - Data length
@@ -179,13 +181,6 @@ int _write(int fd, char *buf, int size)
 
     do
     {
-
-        /**
-         * data0  data1 ��8���ֽ�
-         * data0���λ���ֽڴ�ų��ȣ����Ϊ 7
-         *
-         */
-
         while( (*(DEBUG_DATA0_ADDRESS) != 0u))
         {
 
